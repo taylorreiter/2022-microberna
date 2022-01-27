@@ -8,7 +8,7 @@ SRA = m['experiment_accession']
 
 TMPDIR = "/scratch/tereiter/" # TODO: update tmpdir based on computing env, or remove tmpdir invocation in resources
 #GTDB_SPECIES = ['s__Pseudomonas_aeruginosa']
-GTDB_SPECIES = ['s__Bacillus_pumilus']
+#GTDB_SPECIES = ['s__Bacillus_pumilus']
 
 class Checkpoint_RnaseqToReference:
     """
@@ -20,31 +20,31 @@ class Checkpoint_RnaseqToReference:
     def __init__(self, pattern):
         self.pattern = pattern
 
-    def get_acc_dbs(self, sra):
-        sra_to_ref_csv = f'outputs/rnaseq_sourmash_gather_to_ref_species/{sra}.csv'
+    def get_ref_to_sra(self, sra=None):
+        ref_to_sra_csv = f'outputs/rnaseq_sourmash_gather_to_ref_species/{sra}.csv'
         assert os.path.exists(sra_to_ref_csv)
 
         # there should only be one sra_to_ref, as this reads in the csv
         # that records the best species-level match for each SRA sample
-        with open(sra_to_ref_csv, 'rt') as fp:
+        with open(ref_to_sra_csv, 'rt') as fp:
            r = csv.DictReader(fp)
            for row in r:
-               sra_to_ref = row['sra_to_ref_species']
+               ref_to_sra = row['sra_to_ref_species']
 
-        return sra_to_ref
+        return ref_to_sra
 
     def __call__(self, w):
         global checkpoints
 
-        # wait for the results of 'query_to_species_db';
+        # wait for the results of 'rnaseq_sample_select_best_species_reference';
         # this will trigger exception until that rule has been run.
         checkpoints.rnaseq_sample_select_best_species_reference.get(**w)
 
-        # parse accessions in gather output file
-        ref_to_sra_res = self.rnaseq_sample_select_best_species_reference(w.sra)
+        # parse sra_to_ref string from output csv file.
+        ref_to_sra_res = self.get_ref_to_sra(w.sra)
 
-        p = expand(self.pattern, gtdb_species_to_sra=ref_to_sra_res, **w)
-        return p
+        pattern = expand(self.pattern, gtdb_species_to_sra=ref_to_sra_res, **w)
+        return pattern
 
 
 class Checkpoint_GrabAccessions:
@@ -94,7 +94,7 @@ rule all:
         #expand("outputs/gtdb_genomes_salmon_index/{gtdb_species}/info.json", gtdb_species = GTDB_SPECIES)
         # gather RNAseq sample
         #expand("outputs/rnaseq_sourmash_gather/{sra}_gtdb_k31.csv", sra = SRA)
-        Checkpoint_RnaseqToReference(expand("outputs/rnaseq_salmon/{sra}/{{gtdb_species_to_sra}}_quant/quant.sf", sra = SRA))
+        Checkpoint_RnaseqToReference("outputs/rnaseq_salmon/{gtdb_species_to_sra}_quant/quant.sf")
 
 ##############################################################
 ## Generate reference transcriptome using pangenome analysis
@@ -653,10 +653,10 @@ rule rnaseq_quantify_against_species_pangenome:
         sra_to_ref_species="outputs/rnaseq_sourmash_gather_to_ref_species/{sra}.csv",
         index = "outputs/gtdb_genomes_salmon_index/{gtdb_species}/info.json",
         reads = "outputs/rnaseq_fastp/{sra}.fq.gz"
-    output: "outputs/rnaseq_salmon/{sra}/{gtdb_species}-{sra}_quant/quant.sf"
+    output: "outputs/rnaseq_salmon/{gtdb_species}-{sra}_quant/quant.sf"
     params: 
         index_dir = lambda wildcards: "outputs/gtdb_genomes_salmon_index/" + wildcards.gtdb_species,
-        out_dir = lambda wildcards: "outputs/rnaseq_salmon/{sra}/{gtdb_species}-{sra}_quant" 
+        out_dir = lambda wildcards: "outputs/rnaseq_salmon/{gtdb_species}-{sra}_quant" 
     conda: "envs/salmon.yml"
     resources:
         mem_mb = lambda wildcards, attempt: attempt * 16000 ,
